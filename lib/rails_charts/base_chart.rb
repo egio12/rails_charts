@@ -55,7 +55,18 @@ module RailsCharts
               if (!chartDom) { return }
 
               var lib = ("echarts" in window) ? window.echarts : echarts;
-              var chart = lib.init(chartDom, #{theme.to_json}, { "locale": #{locale.to_json}, "renderer": #{renderer.to_json} });
+              var chart = lib.getInstanceByDom(chartDom) || window.RailsCharts.charts["#{container_id}"];
+
+              if (chart && chart.getDom && chart.getDom() === chartDom) {
+                chart.resize();
+                return;
+              }
+
+              if (chart) {
+                chart.dispose();
+              }
+
+              chart = lib.init(chartDom, #{theme.to_json}, { "locale": #{locale.to_json}, "renderer": #{renderer.to_json} });
               var option = #{option};
               option && chart.setOption(option);
 
@@ -79,14 +90,18 @@ module RailsCharts
             window.addEventListener('load', init_#{chart_id});
             window.addEventListener('turbo:load', init_#{chart_id});
             window.addEventListener('turbolinks:load', init_#{chart_id});
+            document.addEventListener('turbo:render', init_#{chart_id});
 
-            window.addEventListener('turbo:frame-render', init_#{chart_id});
-            window.addEventListener('turbo:frame-load', ()=> {
-                window.removeEventListener('turbo:frame-render', init_#{chart_id});
-            });
+            if (document.readyState === "interactive" || document.readyState === "complete") {
+              requestAnimationFrame(init_#{chart_id});
+            }
+
+            document.addEventListener('turbo:frame-render', init_#{chart_id});
+            document.addEventListener('turbo:frame-load', init_#{chart_id});
 
             document.addEventListener("turbolinks:before-render", destroy_#{chart_id});
             document.addEventListener("turbo:before-render", destroy_#{chart_id});
+            document.addEventListener("turbo:before-cache", destroy_#{chart_id});
           </script>
         </div>
       }

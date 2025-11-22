@@ -7,7 +7,7 @@ module RailsCharts
     attr_reader :data, :options, :chart_id, :container_id, :defaults
     attr_reader :width, :height, :style, :klass, :theme, :locale, :renderer
     attr_reader :other_options, :debug
-    attr_reader :vertical
+    attr_reader :vertical, :nonce
 
     def initialize(data, options = {})
       @data          = data
@@ -29,6 +29,7 @@ module RailsCharts
       @debug         = options.delete(:debug)
 
       @vertical      = options.delete(:vertical).presence
+      @nonce         = options.delete(:nonce)
     end
 
     def js_code
@@ -37,9 +38,11 @@ module RailsCharts
       style_css << "height: #{height}" if height
       style_css << style
 
+      nonce_attr = nonce ? %Q{ nonce="#{ERB::Util.html_escape(nonce)}"} : ""
+
       %Q{
         <div id="#{container_id}" class="#{klass}" style="#{style_css.compact.join('; ')}">
-          <script>
+          <script#{nonce_attr}>
             if (!window.RailsCharts) {
               window.RailsCharts = {}
               window.RailsCharts.charts = {}

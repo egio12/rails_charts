@@ -7,7 +7,7 @@ module RailsCharts
     attr_reader :data, :options, :chart_id, :container_id, :defaults
     attr_reader :width, :height, :style, :klass, :theme, :locale, :renderer
     attr_reader :other_options, :debug
-    attr_reader :vertical
+    attr_reader :vertical, :nonce
 
     def initialize(data, options = {})
       @data          = data
@@ -29,6 +29,7 @@ module RailsCharts
       @debug         = options.delete(:debug)
 
       @vertical      = options.delete(:vertical).presence
+      @nonce         = options.delete(:nonce)
     end
 
     def js_code
@@ -37,56 +38,79 @@ module RailsCharts
       style_css << "height: #{height}" if height
       style_css << style
 
+      nonce_attr = nonce ? %Q{ nonce="#{nonce}"} : ""
+
       %Q{
         <div id="#{container_id}" class="#{klass}" style="#{style_css.compact.join('; ')}">
-          <script>
+          <script#{nonce_attr}>
             if (!window.RailsCharts) {
               window.RailsCharts = {}
               window.RailsCharts.charts = {}
             }
 
-            function init_#{chart_id}(e) {
-              if (document.documentElement.hasAttribute("data-turbolinks-preview")) return;
-              if (document.documentElement.hasAttribute("data-turbo-preview")) return;
+            (function() {
+              var chartId = '#{chart_id}';
+              var containerId = '#{container_id}';
 
-              <!-- #{self.class} -->
-              var chartDom = document.getElementById('#{container_id}');
+              function init(e) {
+                if (document.documentElement.hasAttribute("data-turbolinks-preview")) return;
+                if (document.documentElement.hasAttribute("data-turbo-preview")) return;
 
-              if (!chartDom) { return }
+                var chartDom = document.getElementById(containerId);
+                if (!chartDom) return;
 
-              var lib = ("echarts" in window) ? window.echarts : echarts;
-              var chart = lib.init(chartDom, #{theme.to_json}, { "locale": #{locale.to_json}, "renderer": #{renderer.to_json} });
-              var option = #{option};
-              option && chart.setOption(option);
+                // Avoid reinitializing if chart already exists and is valid
+                var existingChart = window.RailsCharts.charts[containerId];
+                if (existingChart && !existingChart.isDisposed()) return;
 
-              window.RailsCharts.charts["#{container_id}"] = chart;
+                var lib = ("echarts" in window) ? window.echarts : echarts;
+                var chart = lib.init(chartDom, #{theme.to_json}, { "locale": #{locale.to_json}, "renderer": #{renderer.to_json} });
+                var option = #{option};
+                option && chart.setOption(option);
 
-              chart.on('rendered', function() {
-                document.dispatchEvent(new CustomEvent('chart:rendered', {
-                  detail: { containerId: '#{container_id}' }
-                }));
-              });
-            }
+                window.RailsCharts.charts[containerId] = chart;
 
-            function destroy_#{chart_id}(e) {
-              var chart = window.RailsCharts.charts["#{container_id}"];
-              if (chart) {
-                chart.dispose()
+                chart.on('rendered', function() {
+                  document.dispatchEvent(new CustomEvent('chart:rendered', {
+                    detail: { containerId: containerId }
+                  }));
+                });
               }
-              delete window.RailsCharts.charts["#{container_id}"];
-            }
 
-            window.addEventListener('load', init_#{chart_id});
-            window.addEventListener('turbo:load', init_#{chart_id});
-            window.addEventListener('turbolinks:load', init_#{chart_id});
+              function destroy(e) {
+                var chart = window.RailsCharts.charts[containerId];
+                if (chart && !chart.isDisposed()) {
+                  chart.dispose();
+                }
+                delete window.RailsCharts.charts[containerId];
+              }
 
-            window.addEventListener('turbo:frame-render', init_#{chart_id});
-            window.addEventListener('turbo:frame-load', ()=> {
-                window.removeEventListener('turbo:frame-render', init_#{chart_id});
-            });
+              // Cleanup before Turbo/Turbolinks navigation
+              document.addEventListener("turbolinks:before-render", destroy);
+              document.addEventListener("turbo:before-render", destroy);
 
-            document.addEventListener("turbolinks:before-render", destroy_#{chart_id});
-            document.addEventListener("turbo:before-render", destroy_#{chart_id});
+              // Initialize on various load events
+              window.addEventListener('load', init);
+              window.addEventListener('turbo:load', init);
+              window.addEventListener('turbolinks:load', init);
+              window.addEventListener('turbo:render', init);
+
+              // Turbo Frame support
+              window.addEventListener('turbo:frame-render', init);
+              window.addEventListener('turbo:frame-load', function frameLoadHandler() {
+                window.removeEventListener('turbo:frame-render', init);
+              });
+
+              // Initialize immediately if DOM is ready (for Turbo Drive navigation)
+              // When Turbo replaces the page, scripts run after turbo:load has fired,
+              // so we need to initialize immediately if the document is already loaded
+              if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                // Use requestAnimationFrame to ensure DOM is fully painted
+                requestAnimationFrame(function() {
+                  init();
+                });
+              }
+            })();
           </script>
         </div>
       }

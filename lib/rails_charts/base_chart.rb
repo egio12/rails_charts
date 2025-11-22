@@ -38,7 +38,7 @@ module RailsCharts
       style_css << "height: #{height}" if height
       style_css << style
 
-      nonce_attr = nonce ? %Q{ nonce="#{nonce}"} : ""
+      nonce_attr = nonce ? %Q{ nonce="#{ERB::Util.html_escape(nonce)}"} : ""
 
       %Q{
         <div id="#{container_id}" class="#{klass}" style="#{style_css.compact.join('; ')}">
